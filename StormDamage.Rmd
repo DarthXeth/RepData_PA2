@@ -1,0 +1,144 @@
+Assessing US Storm Damage
+===========================
+
+
+###Synopsis: 
+This analysis uses publicly available data from the [National Weather Service ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) to answer the following questions:
+
+1. Across the US, which types of weather events are most harmful to public health?
+2. Across the US, which types of weather events have the most negative economic impact?
+
+
+###Data Pre-Processing and Environment Setup
+
+Download the data in an awkwardly zipped format and read it in
+```{r Get and read data}
+if (!file.exists("StormData.csv.bz2")) 
+{
+    fileURL <- 'https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2'
+    download.file(fileURL, destfile = 'StormData.csv.bz2')
+}
+baseData <- read.csv(bzfile('StormData.csv.bz2'), header=TRUE, stringsAsFactors = FALSE)
+```
+
+Exploring the baseData dataset
+```{r Explore the data}
+str(baseData)
+names(baseData)
+```
+
+Our strategy for determining impact will be as follows:
+
+1. Public health impact ('Harm') will be calculated by adding FATALITIES and INJURIES together
+2. Public economic impact ('Cost') will be calculated by adding together Property Damage Expense (PROPDMGEXP) and Crop Damage Expense (CROPDMGEXP)
+2.1. It is important to note that the PROPDMGEXP and CROPDMGEXP have been 'deflated' for portability according to the scheme described [here]('https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf'), and to be used it needs to be re-inflated accordingly.
+
+This analysis only uses the following columns from the dataset:
+
+EVTYPE: the type of weather event
+FATALITIES: the number of fatalities
+INJURIES: the number of injuries
+PROPDMG: the amount of property damage in US dollars
+PROPDMGEXP: a multiplier for PROPDMG used in inflation/deflation for data portability
+CROPDMG: the amount of crop damage in US dollars
+CROPDMGEXP: a multiplier for CROPDMG PROPDMG used in inflation/deflation for data portability
+
+Create a second, more compact dataset that contains only the columns we will be working with
+```{r Extract columns}
+stormData <- data.frame(EventType = baseData$EVTYPE,
+                        Fatalities = baseData$FATALITIES,
+                        Injuries = baseData$INJURIES,
+                        PropDmg = baseData$PROPDMG,
+                        pdFactor = baseData$PROPDMGEXP,
+                        CropDmg = baseData$CROPDMG,
+                        cdFactor = baseData$CROPDMGEXP,
+                        stringsAsFactors = FALSE)
+```
+
+Now keep only those rows that have a death OR an injury OR a property damage cost OR a crop damagae cost.
+```{r Remove empty rows}
+stormData <- stormData[stormData$Fatalities > 0 | stormData$Injuries > 0 | 
+                           stormData$PropDmg > 0 | stormData$CropDmg > 0, ]
+```
+
+Next we need to 're-inflate' the property and crop damage fields. In a scheme that clearly dates to the days when 32kb cost a lot of money, the database saves a (ridiculously) marginal amount of space by using the pdFactor and cdFactor fields to represent a multiple: 
+
+* H/h is the multiple for 100
+* K/k is the multiple for 1,000
+* M/m is the multiple for 1,000,000
+* B/b is the multiple for 1,000,000
+
+So, for example, if in the CropDmg field we have 9.8, and in the cdFactor field we have M, then we know the crop damage was $9,800,000.
+
+```{r Inflate Damages}
+for (i in 1:nrow(stormData)){
+    if (tolower(stormData$pdFactor[i]) == 'h') {
+        stormData$PropDmg[i] <- stormData$PropDmg[i] * 100
+    }
+    else if (tolower(stormData$pdFactor[i]) == 'k') {
+        stormData$PROPDMG[i] <- stormData$PROPDMG[i] * 1000
+    }
+    else if (tolower(stormData$pdFactor[i]) == 'm') {
+        stormData$PropDmg[i] <- stormData$PropDmg[i] * 1000000
+    }
+    else if (tolower(stormData$pdFactor[i]) == 'b') {
+        stormData$PropDmg[i] <- stormData$PropDmg[i] * 1000000000
+    }
+    
+    if (tolower(stormData$cdFactor[i]) == 'h') {
+        stormData$CropDmg[i] <- stormData$CropDmg[i] * 100
+    }
+    else if (tolower(stormData$cdFactor[i]) == 'k') {
+        stormData$CropDmg[i] <- stormData$CropDmg[i] * 1000
+    }
+    else if (tolower(stormData$cdFactor[i]) == 'm') {
+        stormData$CropDmg[i] <- stormData$CropDmg[i] * 1000000
+    }
+    else if (tolower(stormData$cdFactor[i]) == 'b') {
+        stormData$CropDmg[i] <- stormData$CropDmg[i] * 1000000000
+    }
+}
+```
+Now we calculate totals by event type and sort (decreasing)
+```{r Sum and Sort}
+totalFatalities <- aggregate(stormData$Fatalities, by = list(EventType = stormData$EventType), FUN = sum)
+totalInjuries <- aggregate(stormData$Injuries, by = list(EventType = stormData$EventType), FUN = sum)
+totalPropDmg <- aggregate(stormData$PropDmg, by = list(EventType = stormData$EventType), FUN = sum)
+totalCropDmg <- aggregate(stormData$CropDmg, by = list(EventType = stormData$EventType), FUN = sum)
+
+colnames(totalFatalities)[2] <- 'Total'
+colnames(totalInjuries)[2] <- 'Total'
+colnames(totalPropDmg)[2] <- 'Total'
+colnames(totalCropDmg[2]) <- 'Total'
+
+totalFatalities <- totalFatalities[order(totalFatalities$Total, decreasing = T), ]
+totalInjuries <- totalInjuries[order(totalInjuries$Total, decreasing = T), ]
+totalPropDmg <- totalPropDmg[order(totalPropDmg$Total, decreasing = T), ]
+totalCropDmg <- totalCropDmg[order(totalCropDmg$Total, decreasing = T), ]
+```
+
+For the sake of chart readability, we are going to limit our analysis to the top 12 event types
+
+```{r Top Limiter}
+totalFatalities <- totalFatalities[1:12, ]
+totalInjuries <- totalInjuries[1:12, ]
+totalPropDmg <- totalPropDmg[1:12, ]
+totalCropDmg <- totalCropDmg[1:12, ]
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
