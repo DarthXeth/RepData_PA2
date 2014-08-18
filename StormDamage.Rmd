@@ -12,7 +12,7 @@ This analysis uses publicly available data from the [National Weather Service ](
 ###Data Pre-Processing and Environment Setup
 
 Download the data in an awkwardly zipped format and read it in
-```{r Get and read data}
+```{r Get_and_read_data, cache=TRUE}
 if (!file.exists("StormData.csv.bz2")) 
 {
     fileURL <- 'https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2'
@@ -22,7 +22,7 @@ baseData <- read.csv(bzfile('StormData.csv.bz2'), header=TRUE, stringsAsFactors 
 ```
 
 Exploring the baseData dataset
-```{r Explore the data}
+```{r explore_data,cache=TRUE}
 str(baseData)
 names(baseData)
 ```
@@ -44,7 +44,7 @@ CROPDMG: the amount of crop damage in US dollars
 CROPDMGEXP: a multiplier for CROPDMG PROPDMG used in inflation/deflation for data portability
 
 Create a second, more compact dataset that contains only the columns we will be working with
-```{r Extract columns}
+```{r extract_columns,cache=TRUE}
 stormData <- data.frame(EventType = baseData$EVTYPE,
                         Fatalities = baseData$FATALITIES,
                         Injuries = baseData$INJURIES,
@@ -56,7 +56,7 @@ stormData <- data.frame(EventType = baseData$EVTYPE,
 ```
 
 Now keep only those rows that have a death OR an injury OR a property damage cost OR a crop damagae cost.
-```{r Remove empty rows}
+```{r remove_rows}
 stormData <- stormData[stormData$Fatalities > 0 | stormData$Injuries > 0 | 
                            stormData$PropDmg > 0 | stormData$CropDmg > 0, ]
 ```
@@ -70,8 +70,8 @@ Next we need to 're-inflate' the property and crop damage fields. In a scheme th
 
 So, for example, if in the CropDmg field we have 9.8, and in the cdFactor field we have M, then we know the crop damage was $9,800,000.
 
-```{r Inflate Damages}
-for (i in 1:nrow(stormData)){
+```{r inflate_damages, cache=TRUE}
+for (i in 1 : nrow(stormData)){
     if (tolower(stormData$pdFactor[i]) == 'h') {
         stormData$PropDmg[i] <- stormData$PropDmg[i] * 100
     }
@@ -100,17 +100,21 @@ for (i in 1:nrow(stormData)){
 }
 ```
 Now we calculate totals by event type and sort (decreasing)
-```{r Sum and Sort}
+```{r sum_totals,cache=TRUE}
 totalFatalities <- aggregate(stormData$Fatalities, by = list(EventType = stormData$EventType), FUN = sum)
 totalInjuries <- aggregate(stormData$Injuries, by = list(EventType = stormData$EventType), FUN = sum)
 totalPropDmg <- aggregate(stormData$PropDmg, by = list(EventType = stormData$EventType), FUN = sum)
 totalCropDmg <- aggregate(stormData$CropDmg, by = list(EventType = stormData$EventType), FUN = sum)
+```
 
-colnames(totalFatalities)[2] <- 'Total'
-colnames(totalInjuries)[2] <- 'Total'
-colnames(totalPropDmg)[2] <- 'Total'
-colnames(totalCropDmg[2]) <- 'Total'
+```{r name_total_columns}
+colnames(totalFatalities)[2] <- "Total"
+colnames(totalInjuries)[2] <- "Total"
+colnames(totalPropDmg)[2] <- "Total"
+colnames(totalCropDmg)[2] <- "Total" 
+```
 
+```{r order_results}
 totalFatalities <- totalFatalities[order(totalFatalities$Total, decreasing = T), ]
 totalInjuries <- totalInjuries[order(totalInjuries$Total, decreasing = T), ]
 totalPropDmg <- totalPropDmg[order(totalPropDmg$Total, decreasing = T), ]
@@ -119,14 +123,34 @@ totalCropDmg <- totalCropDmg[order(totalCropDmg$Total, decreasing = T), ]
 
 For the sake of chart readability, we are going to limit our analysis to the top 12 event types
 
-```{r Top Limiter}
+```{r top_limiter}
 totalFatalities <- totalFatalities[1:12, ]
 totalInjuries <- totalInjuries[1:12, ]
 totalPropDmg <- totalPropDmg[1:12, ]
 totalCropDmg <- totalCropDmg[1:12, ]
 ```
+###Results
 
+When plotting the top 12 events, Tornadoes leap out as far and away the most destructive storm in terms of human harm.
 
+```{r plot_harm}
+par(mfrow = c(1, 2), mar = c(12, 4, 3, 2), mgp = c(3, 1, 0), cex = 0.8, las = 3)
+
+barplot(totalFatalities$Total, names.arg = totalFatalities$EventType, col = 'red',
+        main = 'Top 12 Killer Weather Events', ylab = 'Number of Deaths')
+barplot(totalInjuries$Total, names.arg = totalInjuries$EventType, col = 'orange',
+        main = 'Top 12 Injurious Weather Events', ylab = 'Number of Injuries')
+```
+
+When looking at economic cost, floods are #1, driven by the huge property loss cost
+```{r plot_cost}
+par(mfrow = c(1, 2), mar = c(12, 4, 3, 2), mgp = c(3, 1, 0), cex = 0.8, las = 3)
+
+barplot(totalPropDmg$Total, names.arg = totalPropDmg$EventType, col = 'red',
+        main = 'Top 12 Property Wreckers', ylab = 'Cost, USD (Billions)')
+barplot(totalCropDmg$Total, names.arg = totalCropDmg$EventType, col = 'orange',
+        main = 'Top 12 Crop Wreckers', ylab = 'Cost, USD (Billions)')
+```
 
 
 
